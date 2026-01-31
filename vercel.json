@@ -1,14 +1,7 @@
 {
-  "version": 2,
   "functions": {
-    "api/bot.js": {
+    "api/webhook.js": {
       "runtime": "nodejs24.x"
     }
-  },
-  "routes": [
-    {
-      "src": "/api/bot",
-      "dest": "/api/bot.js"
-    }
-  ]
+  }
 }
