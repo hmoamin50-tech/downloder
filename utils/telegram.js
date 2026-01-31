@@ -8,7 +8,7 @@ export async function sendVideoWithOptions(bot, chatId, videoUrl, options = {}) 
 
     // إذا كان حجم الفيديو كبيراً، نرسله كرابط
     if (videoUrl.includes('facebook.com') || videoUrl.includes('fbcdn.net')) {
-      const downloadLink = `${process.env.VERCEL_URL || 'https://your-app.vercel.app'}/api/download?url=${encodeURIComponent(videoUrl)}`;
+      const downloadLink = `${process.env.VERCEL_URL || 'https://hmoamin50-tech/downloder.vercel.app'}/api/download?url=${encodeURIComponent(videoUrl)}`;
       
       await bot.editMessageText(`📥 *رابط التحميل:*\n\n[اضغط هنا للتحميل](${downloadLink})\n\n💾 *لتحميل الفيديو:*\n1. اضغط على الرابط\n2. اضغط على ⋮\n3. اختر "تنزيل"`, {
         chat_id: chatId,
@@ -28,7 +28,7 @@ export async function sendVideoWithOptions(bot, chatId, videoUrl, options = {}) 
       
       if (contentLength && parseInt(contentLength) > 50 * 1024 * 1024) {
         // الفيديو كبير جداً، نرسل الرابط
-        const downloadLink = `${process.env.VERCEL_URL || 'https://your-app.vercel.app'}/api/download?url=${encodeURIComponent(videoUrl)}`;
+        const downloadLink = `${process.env.VERCEL_URL || 'https://hmoamin50-tech/downloder.vercel.app'}/api/download?url=${encodeURIComponent(videoUrl)}`;
         
         await bot.editMessageText(`📦 *الفيديو كبير جداً للإرسال المباشر*\n\n📥 [اضغط هنا للتحميل](${downloadLink})`, {
           chat_id: chatId,
@@ -49,7 +49,7 @@ export async function sendVideoWithOptions(bot, chatId, videoUrl, options = {}) 
 
     } catch (sendError) {
       // إذا فشل الإرسال المباشر، نرسل الرابط
-      const downloadLink = `${process.env.VERCEL_URL || 'https://your-app.vercel.app'}/api/download?url=${encodeURIComponent(videoUrl)}`;
+      const downloadLink = `${process.env.VERCEL_URL || 'https://hmoamin50-tech/downloder.vercel.app'}/api/download?url=${encodeURIComponent(videoUrl)}`;
       
       await bot.editMessageText(`📥 *رابط التحميل البديل:*\n\n[اضغط هنا للتحميل](${downloadLink})`, {
         chat_id: chatId,
