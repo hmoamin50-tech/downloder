@@ -1,32 +1,14 @@
 {
+  "version": 2,
   "functions": {
     "api/bot.js": {
-      "maxDuration": 30
+      "runtime": "nodejs18.x"
     }
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "/",
-      "destination": "/api/bot"
-    },
-    {
-      "source": "/api/bot",
-      "destination": "/api/bot.js"
-    },
-    {
-      "source": "/api/facebook",
-      "destination": "/api/facebook.js"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        }
-      ]
+      "src": "/api/bot",
+      "dest": "/api/bot.js"
     }
   ]
 }
