@@ -1,33 +1,46 @@
-const TelegramBot = require('node-telegram-bot-api');
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-// ⚠️ يفضّل وضعه في Environment Variables
-const BOT_TOKEN = process.env.BOT_TOKEN || 'PUT_YOUR_TOKEN';
+async function sendMessage(chatId, text) {
+  const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text
+    })
+  });
 
-const bot = new TelegramBot(BOT_TOKEN);
+  return res.json();
+}
 
-// /start command
-bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id;
-  console.log('📩 /start from', chatId);
-
-  await bot.sendMessage(
-    chatId,
-    '🎉 أهلاً! البوت يعمل على Vercel بنجاح 🚀'
-  );
-});
-
-// Webhook handler (Vercel)
 module.exports = async (req, res) => {
   if (req.method === 'POST') {
     try {
-      await bot.processUpdate(req.body);
-      return res.status(200).send('OK');
+      let body = '';
+
+      req.on('data', chunk => body += chunk);
+      req.on('end', async () => {
+        const update = JSON.parse(body);
+
+        if (update.message && update.message.text === '/start') {
+          const chatId = update.message.chat.id;
+
+          await sendMessage(
+            chatId,
+            '✅ البوت يعمل على Vercel بدون أخطاء TLS 🚀'
+          );
+        }
+
+        res.status(200).send('OK');
+      });
+
     } catch (err) {
-      console.error('❌ processUpdate error:', err);
-      return res.status(500).send('Error');
+      console.error('❌ Error:', err);
+      res.status(500).send('Error');
     }
+    return;
   }
 
-  // GET test page
-  res.status(200).send('🤖 Telegram Bot is running');
+  res.status(200).send('🤖 Bot is running');
 };
