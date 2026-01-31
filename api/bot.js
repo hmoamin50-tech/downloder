@@ -1,17 +1,16 @@
 const TelegramBot = require('node-telegram-bot-api');
+const { extractFacebookVideo } = require('./facebook');
 
-// الحصول على التوكن من متغيرات البيئة
-const BOT_TOKEN = process.env.BOT_TOKEN || process.env.BOT_TOKEN;
+// الحصول على التوكن
+const BOT_TOKEN = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
 
-// التحقق من وجود التوكن
+console.log('🔑 Token Status:', BOT_TOKEN ? '✅ Present' : '❌ Missing');
+
 if (!BOT_TOKEN) {
   console.error('❌ ERROR: Telegram Bot Token is missing!');
-  console.error('Please set TELEGRAM_BOT_TOKEN or BOT_TOKEN environment variable');
-  
-  // سنسمح للكود بالاستمرار ولكن سنعالج الأخطاء بشكل أفضل
 }
 
-// تهيئة البوت (مع معالجة الأخطاء)
+// تهيئة البوت
 let bot;
 try {
   bot = new TelegramBot(BOT_TOKEN, {
@@ -22,19 +21,6 @@ try {
   console.log('✅ Bot initialized successfully');
 } catch (error) {
   console.error('❌ Error initializing bot:', error.message);
-  // سنتعامل مع هذا في middleware
-}
-
-// Middleware للتحقق من البوت
-function requireBot(req, res, next) {
-  if (!bot) {
-    console.error('Bot not available - returning error');
-    return res.status(500).json({ 
-      error: 'Bot initialization failed',
-      message: 'Telegram Bot Token is not configured'
-    });
-  }
-  next();
 }
 
 // الأمر /start
@@ -50,7 +36,8 @@ if (bot) {
         '2. انتظر بضع ثوانٍ\n' +
         '3. سأرسل لك الفيديو جاهزاً للتحميل\n\n' +
         '🔗 *مثال:*\n' +
-        'https://www.facebook.com/.../videos/...\n\n' +
+        'https://www.facebook.com/.../videos/...\n' +
+        'https://fb.watch/...\n\n' +
         '🚀 *جرب الآن!*',
         { parse_mode: 'Markdown' }
       );
@@ -77,25 +64,48 @@ if (bot) {
       
       try {
         // إرسال رسالة الانتظار
-        const processingMsg = await bot.sendMessage(chatId, '🔄 جاري تحليل الرابط...', {
+        const processingMsg = await bot.sendMessage(chatId, '🔄 جاري تحليل الرابط واستخراج الفيديو...', {
           reply_to_message_id: messageId
         });
 
-        // هنا سيتم إضافة استخراج الفيديو لاحقاً
-        // مؤقتاً نرسل رسالة تجريبية
-        setTimeout(async () => {
-          try {
-            await bot.editMessageText('✅ هذا مجرد اختبار. البوت يعمل!\n\nسيتم إضافة استخراج الفيديو قريباً.', {
-              chat_id: chatId,
-              message_id: processingMsg.message_id
-            });
-          } catch (e) {
-            console.error('Error editing message:', e.message);
-          }
-        }, 1000);
+        // استخراج الفيديو
+        console.log(`🔍 Extracting video from: ${facebookUrl}`);
+        const videoInfo = await extractFacebookVideo(facebookUrl);
+        
+        if (videoInfo.success && videoInfo.videoUrl) {
+          // تحديث رسالة الانتظار
+          await bot.editMessageText('✅ تم العثور على الفيديو! جاري الإرسال...', {
+            chat_id: chatId,
+            message_id: processingMsg.message_id
+          });
+
+          console.log(`🎥 Video found: ${videoInfo.videoUrl}`);
+          
+          // إرسال الفيديو
+          await bot.sendVideo(chatId, videoInfo.videoUrl, {
+            caption: `📹 ${videoInfo.title || 'فيديو Facebook'}\n\n` +
+                     `📊 الجودة: ${videoInfo.quality || 'متوسطة'}\n` +
+                     `👤 الناشر: ${videoInfo.author || 'Facebook'}`,
+            reply_to_message_id: messageId,
+            supports_streaming: true
+          });
+          
+          // حذف رسالة الانتظار
+          await bot.deleteMessage(chatId, processingMsg.message_id);
+          
+        } else {
+          await bot.editMessageText('❌ لم أتمكن من استخراج الفيديو من هذا الرابط.\n\nيرجى التأكد من:\n1. أن الفيديو عام وليس خاصاً\n2. أن الرابط صحيح\n3. المحاولة برابط آخر', {
+            chat_id: chatId,
+            message_id: processingMsg.message_id,
+            parse_mode: 'Markdown'
+          });
+        }
         
       } catch (error) {
-        console.error('Error processing message:', error.message);
+        console.error('Error processing video:', error.message);
+        await bot.sendMessage(chatId, '❌ حدث خطأ أثناء معالجة الفيديو. يرجى المحاولة مرة أخرى.', {
+          reply_to_message_id: messageId
+        });
       }
       
     } else {
@@ -103,9 +113,15 @@ if (bot) {
       try {
         await bot.sendMessage(chatId, 
           '📎 يرجى إرسال رابط فيديو Facebook فقط.\n\n' +
-          '🔗 مثال:\n' +
-          'https://www.facebook.com/.../videos/...',
-          { reply_to_message_id: messageId }
+          '🔗 *أمثلة:*\n' +
+          '• https://www.facebook.com/.../videos/...\n' +
+          '• https://fb.watch/...\n' +
+          '• https://m.facebook.com/.../videos/...\n\n' +
+          '💡 *نصيحة:* انسخ الرابط مباشرة من متصفحك',
+          { 
+            parse_mode: 'Markdown',
+            reply_to_message_id: messageId 
+          }
         );
       } catch (error) {
         console.error('Error sending message:', error.message);
@@ -122,12 +138,7 @@ if (bot) {
 // Handler لـ Vercel
 module.exports = async (req, res) => {
   try {
-    // سجل الطلب الوارد
-    console.log('📨 Received request:', {
-      method: req.method,
-      path: req.url,
-      body: req.body ? 'Body exists' : 'No body'
-    });
+    console.log(`📨 ${req.method} ${req.url}`);
 
     if (req.method === 'POST') {
       // التحقق من وجود البوت
@@ -135,8 +146,7 @@ module.exports = async (req, res) => {
         console.error('Bot not available - returning error');
         return res.status(500).json({ 
           error: 'Bot initialization failed',
-          message: 'Please check environment variables',
-          timestamp: new Date().toISOString()
+          message: 'Please check BOT_TOKEN environment variable'
         });
       }
 
@@ -147,124 +157,212 @@ module.exports = async (req, res) => {
       await bot.processUpdate(update);
       return res.status(200).json({ 
         ok: true,
-        message: 'Update processed',
-        timestamp: new Date().toISOString()
+        message: 'Update processed'
       });
     }
     
-    // GET request - عرض رسالة أن البوت يعمل
+    // GET request - عرض صفحة الويب
     const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Facebook Video Bot</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 50px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-          }
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Facebook Video Downloader Bot</title>
+      <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+      <style>
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+        
+        body {
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          min-height: 100vh;
+          padding: 20px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }
+        
+        .container {
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(10px);
+          border-radius: 20px;
+          padding: 40px;
+          max-width: 800px;
+          width: 100%;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          text-align: center;
+        }
+        
+        h1 {
+          font-size: 2.5rem;
+          margin-bottom: 20px;
+          color: white;
+        }
+        
+        .status {
+          background: ${bot ? '#4CAF50' : '#f44336'};
+          color: white;
+          padding: 15px;
+          border-radius: 10px;
+          margin: 20px 0;
+          font-size: 1.2rem;
+          font-weight: bold;
+        }
+        
+        .info-box {
+          background: rgba(255, 255, 255, 0.2);
+          padding: 20px;
+          border-radius: 10px;
+          margin: 20px 0;
+          text-align: right;
+        }
+        
+        .feature {
+          background: rgba(255, 255, 255, 0.15);
+          padding: 15px;
+          border-radius: 10px;
+          margin: 10px 0;
+          display: flex;
+          align-items: center;
+          gap: 15px;
+        }
+        
+        .feature-icon {
+          font-size: 2rem;
+        }
+        
+        .instructions {
+          text-align: right;
+          margin: 30px 0;
+        }
+        
+        ol {
+          padding-right: 20px;
+          margin: 15px 0;
+        }
+        
+        li {
+          margin-bottom: 10px;
+        }
+        
+        .btn {
+          display: inline-block;
+          background: white;
+          color: #667eea;
+          text-decoration: none;
+          padding: 15px 30px;
+          border-radius: 10px;
+          font-weight: bold;
+          margin: 10px;
+          transition: transform 0.3s;
+        }
+        
+        .btn:hover {
+          transform: translateY(-3px);
+        }
+        
+        .footer {
+          margin-top: 30px;
+          opacity: 0.8;
+          font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
           .container {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 40px;
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-            max-width: 800px;
-            width: 100%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-          }
-          .status {
-            background: ${bot ? 'green' : 'red'};
-            color: white;
-            padding: 15px;
-            border-radius: 10px;
-            display: inline-block;
-            margin: 20px 0;
-            font-size: 1.2rem;
-            font-weight: bold;
-          }
-          .env-info {
-            background: rgba(255, 255, 255, 0.2);
             padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            text-align: left;
-            font-family: monospace;
           }
-          .instructions {
-            text-align: left;
-            margin: 20px 0;
-            padding: 20px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
+          
+          h1 {
+            font-size: 2rem;
           }
-          code {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 2px 5px;
-            border-radius: 3px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>🤖 Facebook Video Bot</h1>
-          
-          <div class="status">
-            ${bot ? '✅ البوت يعمل بشكل طبيعي' : '❌ البوت غير متوفر - مشكلة في التوكن'}
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>🤖 Facebook Video Downloader Bot</h1>
+        
+        <div class="status">
+          ${bot ? '✅ البوت يعمل وجاهز للاستخدام' : '❌ البوت غير نشط - تحقق من التوكن'}
+        </div>
+        
+        <div class="info-box">
+          <p><strong>🔑 حالة التوكن:</strong> ${BOT_TOKEN ? '✅ مضبوط' : '❌ مفقود'}</p>
+          <p><strong>🤖 حالة البوت:</strong> ${bot ? '✅ نشط' : '❌ غير نشط'}</p>
+          <p><strong>🌐 الرابط:</strong> ${process.env.VERCEL_URL || 'downloder-three.vercel.app'}</p>
+          <p><strong>⏰ الوقت:</strong> ${new Date().toLocaleString('ar-SA')}</p>
+        </div>
+        
+        <div class="feature">
+          <div class="feature-icon">🎥</div>
+          <div style="text-align: right;">
+            <h3>تحميل فيديوهات Facebook</h3>
+            <p>أرسل رابط الفيديو واحصل عليه مباشرة</p>
           </div>
-          
-          <div class="env-info">
-            <h3>🔧 معلومات التهيئة:</h3>
-            <p><strong>Bot Token:</strong> ${BOT_TOKEN ? '✅ موجود' : '❌ مفقود'}</p>
-            <p><strong>Bot Initialized:</strong> ${bot ? '✅ نعم' : '❌ لا'}</p>
-            <p><strong>Node Environment:</strong> ${process.env.NODE_ENV || 'غير محدد'}</p>
-            <p><strong>Timestamp:</strong> ${new Date().toLocaleString()}</p>
+        </div>
+        
+        <div class="feature">
+          <div class="feature-icon">⚡</div>
+          <div style="text-align: right;">
+            <h3>سرعة عالية</h3>
+            <p>معالجة سريعة للروابط</p>
           </div>
-          
-          ${!BOT_TOKEN ? `
-          <div class="instructions" style="background: rgba(255, 0, 0, 0.1); border: 2px solid red;">
-            <h3>⚠️ خطأ: توكن البوت مفقود!</h3>
-            <p>لإصلاح المشكلة:</p>
-            <ol>
-              <li>اذهب إلى <a href="https://vercel.com/dashboard" style="color: white; text-decoration: underline;">Vercel Dashboard</a></li>
-              <li>اختر مشروع <strong>downloder-three</strong></li>
-              <li>اضغط على <strong>Settings</strong> → <strong>Environment Variables</strong></li>
-              <li>أضف متغيراً جديداً:
-                <ul>
-                  <li><strong>Name:</strong> <code>TELEGRAM_BOT_TOKEN</code></li>
-                  <li><strong>Value:</strong> توكن البوت الخاص بك</li>
-                </ul>
-              </li>
-              <li>أعد نشر المشروع</li>
-            </ol>
+        </div>
+        
+        <div class="feature">
+          <div class="feature-icon">🔒</div>
+          <div style="text-align: right;">
+            <h3>آمن</h3>
+            <p>لا يتم حفظ الفيديوهات على السيرفر</p>
           </div>
+        </div>
+        
+        <div class="instructions">
+          <h3>📋 طريقة الاستخدام:</h3>
+          <ol>
+            <li>انضم إلى البوت على Telegram</li>
+            <li>أرسل رابط فيديو Facebook</li>
+            <li>انتظر حتى تتم معالجة الرابط</li>
+            <li>استلم الفيديو مباشرة في المحادثة</li>
+          </ol>
+        </div>
+        
+        <div style="margin-top: 30px;">
+          ${bot ? `
+            <a href="https://t.me/${(async () => {
+              try {
+                const me = await bot.getMe();
+                return me.username;
+              } catch {
+                return 'your_bot_username';
+              }
+            })()}" class="btn" target="_blank">
+              🤖 ابدأ الآن
+            </a>
           ` : ''}
           
-          <div class="instructions">
-            <h3>📋 تعليمات التشغيل:</h3>
-            <ol>
-              <li>تأكد من تعيين التوكن في Vercel</li>
-              <li>تعيين Webhook:
-                <code>curl -X POST "https://api.telegram.org/botYOUR_TOKEN/setWebhook?url=https://downloder-three.vercel.app/api/bot"</code>
-              </li>
-              <li>افتح Telegram وابحث عن البوت</li>
-              <li>أرسل <code>/start</code> للبدء</li>
-            </ol>
-          </div>
-          
-          <p>رابط المشروع: <code>https://downloder-three.vercel.app</code></p>
-          <p>Webhook Endpoint: <code>https://downloder-three.vercel.app/api/bot</code></p>
+          <a href="https://vercel.com/downloder-three/settings/environment-variables" 
+             class="btn" 
+             target="_blank"
+             style="background: rgba(255, 255, 255, 0.2); color: white; border: 2px solid white;">
+            ⚙️ إعدادات Vercel
+          </a>
         </div>
-      </body>
-      </html>
+        
+        <div class="footer">
+          <p>مشروع مفتوح المصدر يعمل على منصة Vercel</p>
+          <p>© ${new Date().getFullYear()} - تم التطوير باستخدام Node.js</p>
+        </div>
+      </div>
+    </body>
+    </html>
     `;
     
     res.status(200).send(html);
@@ -273,7 +371,6 @@ module.exports = async (req, res) => {
     console.error('❌ Handler error:', error);
     res.status(500).json({ 
       error: error.message,
-      stack: error.stack,
       timestamp: new Date().toISOString()
     });
   }
