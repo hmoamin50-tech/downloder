@@ -1,35 +1,33 @@
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+import axios from "axios";
 
 export default async function handler(req, res) {
-  console.log('🔥 HIT:', req.method);
-
-  if (req.method !== 'POST') {
-    return res.status(200).send('Bot alive');
+  if (req.method !== "POST") {
+    return res.status(200).send("Telegram Bot is running 🚀");
   }
 
   try {
-    const update = req.body;
-    console.log('📦 UPDATE:', update);
+    const message = req.body.message;
 
-    if (update?.message?.text === '/start') {
-      const chatId = update.message.chat.id;
-
-      await fetch(`${API}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: '✅ البوت يعمل الآن على Vercel 🔥'
-        })
-      });
-
-      console.log('✅ Message sent');
+    if (!message) {
+      return res.status(200).end();
     }
 
-    return res.status(200).send('OK');
-  } catch (e) {
-    console.error('❌ ERROR:', e);
-    return res.status(500).send('ERR');
+    const chatId = message.chat.id;
+    const text = message.text || "";
+
+    const reply = `👋 أهلاً!\nاستلمت رسالتك:\n\n${text}`;
+
+    await axios.post(
+      `https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`,
+      {
+        chat_id: chatId,
+        text: reply
+      }
+    );
+
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    return res.status(200).json({ ok: false });
   }
 }
