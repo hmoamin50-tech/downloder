@@ -1,8 +1,8 @@
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 async function sendMessage(chatId, text) {
-  const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
+  await fetch(`${API}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -10,37 +10,33 @@ async function sendMessage(chatId, text) {
       text
     })
   });
-
-  return res.json();
 }
 
 module.exports = async (req, res) => {
-  if (req.method === 'POST') {
-    try {
-      let body = '';
+  console.log('🔥 Function hit:', req.method);
 
-      req.on('data', chunk => body += chunk);
-      req.on('end', async () => {
-        const update = JSON.parse(body);
-
-        if (update.message && update.message.text === '/start') {
-          const chatId = update.message.chat.id;
-
-          await sendMessage(
-            chatId,
-            '✅ البوت يعمل على Vercel بدون أخطاء TLS 🚀'
-          );
-        }
-
-        res.status(200).send('OK');
-      });
-
-    } catch (err) {
-      console.error('❌ Error:', err);
-      res.status(500).send('Error');
-    }
-    return;
+  if (req.method !== 'POST') {
+    return res.status(200).send('Bot alive');
   }
 
-  res.status(200).send('🤖 Bot is running');
+  try {
+    const update = req.body; // 🔴 المفتاح هنا
+    console.log('📦 Update:', JSON.stringify(update));
+
+    if (update?.message?.text === '/start') {
+      const chatId = update.message.chat.id;
+
+      await sendMessage(
+        chatId,
+        '✅ البوت يعمل الآن على Vercel (مضمون 💪)'
+      );
+
+      console.log('✅ Message sent');
+    }
+
+    return res.status(200).send('OK');
+  } catch (err) {
+    console.error('❌ Error:', err);
+    return res.status(500).send('Error');
+  }
 };
