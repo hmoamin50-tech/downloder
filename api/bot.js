@@ -1,289 +1,217 @@
 const TelegramBot = require('node-telegram-bot-api');
 
-// 1. احصل على التوكن من متغيرات البيئة
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN;
+// الحصول على التوكن
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-// 2. عرض رسالة إذا لم يكن التوكن موجوداً
+// التحقق من التوكن
 if (!BOT_TOKEN) {
-  console.log('⚠️  ملاحظة: لم يتم تعيين توكن البوت');
-  console.log('لإضافة التوكن في Vercel:');
-  console.log('1. اذهب إلى Settings → Environment Variables');
-  console.log('2. أضف متغير جديد:');
-  console.log('   - Name: TELEGRAM_BOT_TOKEN');
-  console.log('   - Value: توكن_البوت_الخاص_بك');
-  console.log('3. أعد النشر');
+  console.error('❌ ERROR: TELEGRAM_BOT_TOKEN is not set!');
+  console.log('📝 Current environment variables:', Object.keys(process.env).filter(k => k.includes('BOT') || k.includes('TELEGRAM')));
 }
 
-// 3. إنشاء البوت (إذا كان التوكن موجوداً)
-let bot;
-try {
-  if (BOT_TOKEN) {
-    bot = new TelegramBot(BOT_TOKEN, { polling: false });
-    console.log('✅ تم تهيئة البوت بنجاح');
-  } else {
-    console.log('❌ لم يتم تهيئة البوت - التوكن مفقود');
-  }
-} catch (error) {
-  console.error('❌ خطأ في تهيئة البوت:', error.message);
-}
+// إنشاء البوت
+const bot = new TelegramBot(BOT_TOKEN, { 
+  polling: false 
+});
 
-// 4. معالجة الأمر /start
-if (bot) {
-  bot.onText(/\/start/, async (msg) => {
-    const chatId = msg.chat.id;
-    try {
-      await bot.sendMessage(chatId, 
-        '👋 أهلاً! أنا بوت بسيط يعمل على Vercel.\n\n' +
-        '📝 فقط أرسل لي أي رسالة وسأرد عليك بنفس الرسالة.\n\n' +
-        '🚀 جرب الآن! أرسل لي "مرحباً"'
-      );
-    } catch (error) {
-      console.error('خطأ في /start:', error.message);
-    }
-  });
+console.log('🤖 Bot created with token:', BOT_TOKEN ? '✅ Present' : '❌ Missing');
 
-  // 5. معالجة جميع الرسائل
-  bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text;
-    
-    // تجاهل الأمر /start
-    if (text && text.startsWith('/')) return;
-    
-    try {
-      if (text) {
-        // رد بنفس الرسالة
-        await bot.sendMessage(chatId, `📨 تلقيت: "${text}"\n\n✅ هذا كل ما أفعله الآن!`);
-      } else {
-        await bot.sendMessage(chatId, '❌ لم أتلقى نصاً في رسالتك.');
-      }
-    } catch (error) {
-      console.error('خطأ في معالجة الرسالة:', error.message);
-    }
-  });
-}
-
-// 6. معالج طلبات Vercel
-module.exports = async (req, res) => {
-  console.log(`📨 طلب ${req.method} على ${req.url}`);
+// الأمر /start
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  console.log(`👋 /start command from chat ${chatId}`);
   
-  if (req.method === 'POST') {
-    // معالجة webhook من Telegram
-    try {
-      if (!bot) {
-        return res.status(500).json({ 
-          error: 'Bot not initialized',
-          message: 'TELEGRAM_BOT_TOKEN is missing'
-        });
+  bot.sendMessage(chatId, 
+    '🚀 *مرحباً! البوت يعمل الآن!*\n\n' +
+    'أرسل لي أي رسالة وسأرد عليك بنفس الرسالة.\n\n' +
+    'جرب إرسال:\n' +
+    '"مرحباً" أو "كيف الحال؟"',
+    { parse_mode: 'Markdown' }
+  ).catch(err => {
+    console.error('Error sending /start message:', err.message);
+  });
+});
+
+// معالجة جميع الرسائل النصية
+bot.on('message', (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+  
+  console.log(`📨 Message from ${chatId}: "${text}"`);
+  
+  // تجاهل الرسائل غير النصية
+  if (!text) return;
+  
+  // تجاهل الأمر /start (تمت معالجته بالفعل)
+  if (text.startsWith('/start')) return;
+  
+  // تجاهل الأوامر الأخرى
+  if (text.startsWith('/')) {
+    bot.sendMessage(chatId, '⚠️ هذا الأمر غير مدعوم حالياً. أرسل أي رسالة نصية عادية.')
+      .catch(err => console.error('Error sending unsupported command message:', err.message));
+    return;
+  }
+  
+  // رد بسيط بنفس الرسالة
+  bot.sendMessage(chatId, `📨 *لقد تلقيت:*\n\n"${text}"\n\n✅ *الرد:*\nنعم، سمعتك! البوت يعمل بشكل ممتاز! 🎉`, {
+    parse_mode: 'Markdown'
+  }).catch(err => {
+    console.error('Error echoing message:', err.message);
+  });
+});
+
+// معالجة الأخطاء
+bot.on('polling_error', (error) => {
+  console.error('❌ Polling error:', error.message);
+});
+
+bot.on('webhook_error', (error) => {
+  console.error('❌ Webhook error:', error.message);
+});
+
+// Handler الأساسي لـ Vercel
+module.exports = async (req, res) => {
+  console.log(`🌐 ${req.method} request to ${req.url}`);
+  
+  try {
+    if (req.method === 'POST') {
+      console.log('📦 Request body:', JSON.stringify(req.body).substring(0, 200) + '...');
+      
+      // معالجة التحديث من Telegram
+      const update = req.body;
+      
+      // تسجيل التحديث المفصل
+      if (update.message) {
+        const msg = update.message;
+        console.log(`📝 Update Details:
+          Update ID: ${update.update_id}
+          Chat ID: ${msg.chat.id}
+          Username: ${msg.from?.username || 'N/A'}
+          First Name: ${msg.from?.first_name || 'N/A'}
+          Text: ${msg.text || 'No text'}
+          Date: ${new Date(msg.date * 1000).toISOString()}
+        `);
       }
       
-      const update = req.body;
-      console.log('🔔 تحديث من Telegram:', update.update_id);
-      
+      // معالجة التحديث
       await bot.processUpdate(update);
       
-      res.status(200).json({ 
-        success: true,
+      console.log('✅ Update processed successfully');
+      
+      return res.status(200).json({ 
+        ok: true,
         message: 'Update processed',
-        timestamp: new Date().toISOString()
-      });
-    } catch (error) {
-      console.error('❌ خطأ في معالجة التحديث:', error);
-      res.status(500).json({ 
-        error: error.message,
+        update_id: update.update_id,
         timestamp: new Date().toISOString()
       });
     }
-  } else {
-    // عرض صفحة HTML عند زيارة الرابط في المتصفح
+    
+    // GET request - عرض صفحة معلومات
     const html = `
     <!DOCTYPE html>
-    <html dir="rtl" lang="ar">
+    <html>
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>🤖 Simple Telegram Bot</title>
+      <title>Telegram Bot Status</title>
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+          font-family: Arial, sans-serif;
+          text-align: center;
+          padding: 50px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
           color: white;
-          min-height: 100vh;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          padding: 20px;
         }
         .container {
           background: rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(10px);
-          border-radius: 20px;
           padding: 40px;
-          max-width: 800px;
-          width: 100%;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          text-align: center;
+          border-radius: 20px;
+          backdrop-filter: blur(10px);
+          max-width: 600px;
+          margin: 0 auto;
         }
-        h1 { font-size: 2.5rem; margin-bottom: 20px; }
         .status {
-          background: ${bot ? '#00ff00' : '#ff0000'};
-          color: ${bot ? 'black' : 'white'};
+          background: green;
+          color: white;
+          padding: 10px 20px;
+          border-radius: 10px;
+          display: inline-block;
+          margin: 20px 0;
+          font-size: 1.2rem;
+        }
+        .log-box {
+          background: rgba(0, 0, 0, 0.3);
           padding: 15px;
           border-radius: 10px;
           margin: 20px 0;
-          font-size: 1.2rem;
-          font-weight: bold;
+          text-align: left;
+          font-family: monospace;
+          font-size: 0.9rem;
+          max-height: 200px;
+          overflow-y: auto;
         }
-        .info-box {
-          background: rgba(255, 255, 255, 0.2);
-          padding: 20px;
-          border-radius: 10px;
+        .instructions {
+          text-align: left;
           margin: 20px 0;
-          text-align: right;
-        }
-        .steps {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 20px;
-          margin: 30px 0;
-        }
-        .step {
-          background: rgba(255, 255, 255, 0.15);
           padding: 20px;
+          background: rgba(255, 255, 255, 0.1);
           border-radius: 10px;
-          text-align: center;
-        }
-        .step-number {
-          background: white;
-          color: #0083b0;
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin: 0 auto 10px;
-          font-weight: bold;
-          font-size: 1.2rem;
         }
         code {
           background: rgba(0, 0, 0, 0.3);
-          padding: 5px 10px;
-          border-radius: 5px;
-          font-family: monospace;
+          padding: 2px 5px;
+          border-radius: 3px;
           display: block;
-          margin: 10px 0;
+          margin: 5px 0;
           overflow-x: auto;
-        }
-        .links {
-          margin-top: 30px;
-          display: flex;
-          justify-content: center;
-          gap: 20px;
-          flex-wrap: wrap;
-        }
-        .link-btn {
-          background: white;
-          color: #0083b0;
-          text-decoration: none;
-          padding: 12px 25px;
-          border-radius: 8px;
-          font-weight: bold;
-          transition: all 0.3s;
-          border: 2px solid white;
-        }
-        .link-btn:hover {
-          background: transparent;
-          color: white;
-        }
-        .footer {
-          margin-top: 30px;
-          opacity: 0.8;
-          font-size: 0.9rem;
         }
       </style>
     </head>
     <body>
       <div class="container">
-        <h1>🤖 Simple Telegram Bot</h1>
+        <h1>🤖 Telegram Bot Status</h1>
         
-        <div class="status">
-          ${bot ? '✅ البوت يعمل وجاهز للاستقبال' : '❌ البوت غير نشط - التوكن مفقود'}
+        <div class="status">✅ Bot is Running</div>
+        
+        <div class="log-box">
+          <strong>Last Log:</strong><br>
+          🔔 تحديث من Telegram: ${req.query.update_id || 'No update yet'}<br>
+          ⏰ Time: ${new Date().toLocaleString()}<br>
+          🌐 URL: ${process.env.VERCEL_URL || 'Not set'}<br>
+          🔑 Token: ${BOT_TOKEN ? '✅ Present' : '❌ Missing'}
         </div>
         
-        <div class="info-box">
-          <h3>📊 معلومات:</h3>
-          <p><strong>الحالة:</strong> ${bot ? '✅ نشط' : '❌ غير نشط'}</p>
-          <p><strong>التوكن:</strong> ${BOT_TOKEN ? '✅ موجود' : '❌ مفقود'}</p>
-          <p><strong>الرابط:</strong> ${process.env.VERCEL_URL || 'https://your-app.vercel.app'}</p>
-          <p><strong>الوقت:</strong> ${new Date().toLocaleString('ar-SA')}</p>
-        </div>
-        
-        ${!BOT_TOKEN ? `
-        <div style="background: rgba(255, 0, 0, 0.2); padding: 20px; border-radius: 10px; margin: 20px 0; text-align: right;">
-          <h3>⚠️ تعليمات إضافة التوكن:</h3>
-          <ol style="padding-right: 20px;">
-            <li>اذهب إلى إعدادات المشروع في Vercel</li>
-            <li>اختر "Environment Variables"</li>
-            <li>اضف متغير جديد:
-              <ul>
-                <li><strong>Name:</strong> TELEGRAM_BOT_TOKEN</li>
-                <li><strong>Value:</strong> توكن البوت من @BotFather</li>
-              </ul>
-            </li>
-            <li>أعد نشر المشروع</li>
+        <div class="instructions">
+          <h3>📋 How to Test:</h3>
+          <ol>
+            <li>Open your bot on Telegram</li>
+            <li>Send <code>/start</code></li>
+            <li>Send any message like "Hello"</li>
+            <li>Bot should reply with your message</li>
           </ol>
-        </div>
-        ` : ''}
-        
-        <div class="steps">
-          <div class="step">
-            <div class="step-number">1</div>
-            <h3>إنشاء البوت</h3>
-            <p>اذهب إلى @BotFather في Telegram وأنشئ بوت جديد</p>
-          </div>
-          <div class="step">
-            <div class="step-number">2</div>
-            <h3>تعيين التوكن</h3>
-            <p>أضف التوكن إلى متغيرات البيئة في Vercel</p>
-          </div>
-          <div class="step">
-            <div class="step-number">3</div>
-            <h3>تعيين Webhook</h3>
-            <p>شغل هذا الأمر في Terminal:</p>
-            <code>curl -X POST "https://api.telegram.org/botYOUR_TOKEN/setWebhook?url=${process.env.VERCEL_URL || 'YOUR_URL'}/api/bot"</code>
-          </div>
-          <div class="step">
-            <div class="step-number">4</div>
-            <h3>اختبار البوت</h3>
-            <p>أرسل /start للبوت وابدأ المحادثة</p>
-          </div>
+          
+          <h3>🔧 Debug Info:</h3>
+          <code>Bot Token: ${BOT_TOKEN ? 'Set (' + BOT_TOKEN.substring(0, 10) + '...)' : 'NOT SET'}</code>
+          <code>Webhook URL: https://${process.env.VERCEL_URL || 'YOUR_URL'}/api/bot</code>
+          <code>Node Version: ${process.version}</code>
         </div>
         
-        <div class="links">
-          <a href="https://t.me/botfather" class="link-btn" target="_blank">🔗 @BotFather</a>
-          <a href="https://vercel.com/dashboard" class="link-btn" target="_blank">📊 Vercel Dashboard</a>
-          ${BOT_TOKEN ? `<a href="https://t.me/${bot ? (await bot.getMe()).username : 'YOUR_BOT'}" class="link-btn" target="_blank">🤖 تجربة البوت</a>` : ''}
-        </div>
-        
-        <div class="footer">
-          <p>مشروع بسيط لتعلم كيفية عمل Telegram Bot على Vercel</p>
-          <p>© ${new Date().getFullYear()} - سيعمل بمجرد إضافة التوكن</p>
-        </div>
+        <p>If the bot doesn't respond, check Vercel logs for errors.</p>
       </div>
-      
-      <script>
-        // تحديث الصفحة كل 10 ثواني لعرض الحالة المحدثة
-        setTimeout(() => {
-          window.location.reload();
-        }, 10000);
-      </script>
     </body>
     </html>
     `;
     
     res.status(200).send(html);
+    
+  } catch (error) {
+    console.error('❌ Handler error:', error);
+    console.error('Error stack:', error.stack);
+    
+    res.status(500).json({
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
   }
 };
