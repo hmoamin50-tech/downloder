@@ -3,13 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vercel dev",
-    "setup": "node setup-webhook.js"
+    "dev": "vercel dev"
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.64.0",
     "axios": "^1.6.0",
-    "cheerio": "^1.0.0-rc.12",
     "form-data": "^4.0.0"
   }
 }
