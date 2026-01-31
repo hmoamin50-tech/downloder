@@ -1,13 +1,15 @@
 {
-  "name": "simple-telegram-bot",
-  "version": "1.0.0",
-  "description": "Simple echo Telegram bot for Vercel",
+  "name": "facebook-video-bot",
+  "version": "2.0.0",
+  "description": "Telegram bot to download Facebook videos",
   "main": "api/bot.js",
   "scripts": {
     "dev": "node api/bot.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.64.0"
+    "node-telegram-bot-api": "^0.64.0",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12"
   },
   "engines": {
     "node": ">=18"
