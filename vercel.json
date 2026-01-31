@@ -2,32 +2,29 @@
   "functions": {
     "api/bot.js": {
       "maxDuration": 30
-    },
-    "api/download.js": {
-      "maxDuration": 30
     }
   },
   "rewrites": [
     {
       "source": "/",
-      "destination": "/public/index.html"
+      "destination": "/api/bot"
     },
     {
       "source": "/api/bot",
       "destination": "/api/bot.js"
-    },
-    {
-      "source": "/api/download",
-      "destination": "/api/download.js"
     }
   ],
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/api/(.*)",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
           "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET,POST,OPTIONS"
         }
       ]
     }
