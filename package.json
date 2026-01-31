@@ -1,19 +1,18 @@
 {
   "name": "facebook-video-bot",
   "version": "1.0.0",
-  "description": "Telegram bot to download Facebook videos",
-  "main": "api/bot.js",
+  "type": "module",
   "scripts": {
     "dev": "vercel dev",
-    "deploy": "vercel deploy --prod"
+    "setup-webhook": "node setup-webhook.js"
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.64.0",
     "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
-    "form-data": "^4.0.0"
-  },
-  "engines": {
-    "node": ">=18"
+    "form-data": "^4.0.0",
+    "node-fetch": "^3.3.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0"
   }
 }
