@@ -3,7 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 // 1. الحصول على التوكن
 const token = process.env.BOT_TOKEN;
 
-// 2. سجل التوكن (الجزء الأول فقط للأمان)
+// 2.  2 سجل التوكن (الجزء الأول فقط للأمان)
 console.log('🔑 Token check:', token ? `Present (${token.substring(0, 15)}...)` : 'MISSING!');
 
 if (!token) {
