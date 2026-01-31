@@ -1,0 +1,35 @@
+{
+  "functions": {
+    "api/bot.js": {
+      "maxDuration": 30
+    },
+    "api/download.js": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/public/index.html"
+    },
+    {
+      "source": "/api/bot",
+      "destination": "/api/bot.js"
+    },
+    {
+      "source": "/api/download",
+      "destination": "/api/download.js"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    }
+  ]
+}
