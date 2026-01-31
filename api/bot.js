@@ -1,169 +1,275 @@
 import TelegramBot from "node-telegram-bot-api";
 import axios from "axios";
-import * as cheerio from "cheerio";
+import FormData from "form-data";
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
 
-// دالة محسنة لاستخراج الفيديو من Facebook
-async function extractFacebookVideo(url) {
-  try {
-    console.log(`🔍 محاولة استخراج الفيديو من: ${url}`);
-    
-    // تنظيف الرابط
-    const cleanUrl = url.trim();
-    
-    // استخدام خدمة savetik.net التي تعمل بشكل جيد مع فيسبوك
-    const apiUrl = `https://savetik.net/api/ajaxSearch`;
-    
-    const formData = new FormData();
-    formData.append('q', cleanUrl);
-    formData.append('lang', 'en');
-    
-    const response = await axios.post(apiUrl, formData, {
+// استخدم هذه الـ APIs لتحميل فيديوهات Facebook
+const DOWNLOAD_APIS = [
+  {
+    name: "tikmate",
+    url: "https://tikmate.app/api/ajaxSearch",
+    method: "POST",
+    getVideoUrl: (data) => {
+      if (data.links && data.links.length > 0) {
+        // البحث عن أعلى جودة
+        const hdVideo = data.links.find(link => link.quality === "HD");
+        return hdVideo ? hdVideo.url : data.links[0].url;
+      }
+      return null;
+    }
+  },
+  {
+    name: "snapsave",
+    url: "https://snapsave.app/action.php",
+    method: "POST",
+    getVideoUrl: (data) => {
+      if (data.links && data.links.length > 0) {
+        return data.links[0].url;
+      }
+      return null;
+    }
+  },
+  {
+    name: "yt5s",
+    url: "https://yt5s.com/api/ajaxSearch",
+    method: "POST",
+    getVideoUrl: (data) => {
+      if (data.video && data.video.length > 0) {
+        return data.video[0].url;
+      }
+      return null;
+    }
+  }
+];
+
+// دالة لاستخراج الفيديو باستخدام API
+async function extractVideoWithAPI(facebookUrl) {
+  console.log(`🔍 محاولة استخراج الفيديو: ${facebookUrl}`);
+  
+  // تجربة جميع الـ APIs المتاحة
+  for (const api of DOWNLOAD_APIS) {
+    try {
+      console.log(`🔄 جرب API: ${api.name}`);
+      
+      let response;
+      
+      if (api.method === "POST") {
+        const formData = new FormData();
+        formData.append('url', facebookUrl);
+        
+        response = await axios.post(api.url, formData, {
+          headers: {
+            ...formData.getHeaders(),
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Origin': 'https://yt5s.com',
+            'Referer': 'https://yt5s.com/'
+          },
+          timeout: 15000
+        });
+      } else {
+        response = await axios.get(api.url, {
+          params: { url: facebookUrl },
+          timeout: 15000
+        });
+      }
+      
+      const videoUrl = api.getVideoUrl(response.data);
+      
+      if (videoUrl) {
+        console.log(`✅ تم العثور على الفيديو باستخدام ${api.name}`);
+        return {
+          success: true,
+          videoUrl: videoUrl,
+          source: api.name,
+          message: "تم استخراج الفيديو بنجاح"
+        };
+      }
+      
+    } catch (error) {
+      console.log(`❌ فشل API ${api.name}:`, error.message);
+      continue;
+    }
+  }
+  
+  // إذا فشلت جميع الـ APIs، نجرب طريقة ثانية
+  return await tryAlternativeAPIs(facebookUrl);
+}
+
+// طريقة بديلة باستخدام APIs أخرى
+async function tryAlternativeAPIs(facebookUrl) {
+  console.log("🔄 جرب طريقة بديلة...");
+  
+  const alternativeAPIs = [
+    {
+      url: "https://api.fbdown.net/download",
+      params: { url: facebookUrl }
+    },
+    {
+      url: "https://getvideo.p.rapidapi.com/",
+      params: { url: facebookUrl },
       headers: {
-        'Content-Type': 'multipart/form-data',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Origin': 'https://savetik.net',
-        'Referer': 'https://savetik.net/'
+        'X-RapidAPI-Key': 'your-rapidapi-key', // تحتاج للحصول على مفتاح
+        'X-RapidAPI-Host': 'getvideo.p.rapidapi.com'
+      }
+    }
+  ];
+  
+  for (const api of alternativeAPIs) {
+    try {
+      const response = await axios.get(api.url, {
+        params: api.params,
+        headers: api.headers || {},
+        timeout: 10000
+      });
+      
+      if (response.data && response.data.links) {
+        const videoUrl = response.data.links.find(link => link.quality === "HD")?.url || 
+                         response.data.links[0]?.url;
+        
+        if (videoUrl) {
+          return {
+            success: true,
+            videoUrl: videoUrl,
+            source: "alternative",
+            message: "تم الاستخراج عبر API بديل"
+          };
+        }
+      }
+    } catch (error) {
+      console.log(`❌ فشل API البديل:`, error.message);
+    }
+  }
+  
+  // إذا فشل كل شيء، نستخدم طريقة محاكاة المتصفح
+  return await simulateBrowserExtraction(facebookUrl);
+}
+
+// محاكاة المتصفح لاستخراج الفيديو
+async function simulateBrowserExtraction(facebookUrl) {
+  try {
+    console.log("🌐 محاكاة المتصفح...");
+    
+    const response = await axios.get(facebookUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0'
       },
       timeout: 15000
     });
     
-    const data = response.data;
+    const html = response.data;
     
-    if (data.status && data.links) {
-      // البحث عن رابط الفيديو عالي الجودة
-      let videoUrl = null;
-      let quality = 'SD';
-      
-      // ترتيب الجودة المفضلة
-      const qualityOrder = ['1080', '720', 'HD', 'High', 'Normal', 'Low'];
-      
-      for (const qualityType of qualityOrder) {
-        for (const link of data.links) {
-          if (link.quality && link.quality.includes(qualityType) && link.url) {
-            videoUrl = link.url;
-            quality = link.quality;
-            break;
-          }
+    // البحث عن رابط الفيديو في الـ HTML
+    const videoRegex = /(?:src|href)=["'](https?:\/\/[^"']*\.(?:mp4|mov|avi|webm)[^"']*)["']/gi;
+    const matches = html.match(videoRegex);
+    
+    if (matches) {
+      for (const match of matches) {
+        const url = match.replace(/(src|href)=["']|["']/g, '');
+        if (url.includes('video') || url.includes('fbcdn.net')) {
+          return {
+            success: true,
+            videoUrl: url,
+            source: "browser",
+            message: "تم الاستخراج عبر محاكاة المتصفح"
+          };
         }
-        if (videoUrl) break;
-      }
-      
-      // إذا لم نجد، نأخذ أول رابط
-      if (!videoUrl && data.links[0]?.url) {
-        videoUrl = data.links[0].url;
-        quality = data.links[0].quality || 'SD';
-      }
-      
-      if (videoUrl) {
-        return {
-          success: true,
-          videoUrl: videoUrl,
-          quality: quality,
-          title: data.title || 'Facebook Video'
-        };
       }
     }
     
-    return {
-      success: false,
-      error: "لم يتم العثور على فيديو"
-    };
+    // البحث عن og:video meta tag
+    const ogVideoRegex = /<meta[^>]*property=["']og:video["'][^>]*content=["']([^"']+)["'][^>]*>/i;
+    const ogMatch = html.match(ogVideoRegex);
     
-  } catch (error) {
-    console.error('❌ خطأ في الاستخراج:', error.message);
-    
-    // محاولة طريقة بديلة
-    return await tryAlternativeMethod(url);
-  }
-}
-
-// طريقة بديلة لاستخراج الفيديو
-async function tryAlternativeMethod(url) {
-  try {
-    console.log('🔄 محاولة طريقة بديلة...');
-    
-    // استخدام fdownloader.net
-    const response = await axios.get(`https://fdownloader.net/`, {
-      params: { url: url },
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    
-    const $ = cheerio.load(response.data);
-    
-    // البحث عن روابط التحميل
-    let videoUrl = null;
-    
-    $('a[href*=".mp4"], a[href*="video"]').each((i, elem) => {
-      const href = $(elem).attr('href');
-      const text = $(elem).text().toLowerCase();
-      
-      if (href && !href.includes('fdownloader.net') && 
-          (href.includes('.mp4') || text.includes('download') || text.includes('video'))) {
-        videoUrl = href;
-      }
-    });
-    
-    if (videoUrl) {
+    if (ogMatch && ogMatch[1]) {
       return {
         success: true,
-        videoUrl: videoUrl,
-        quality: 'HD',
-        title: 'Facebook Video'
+        videoUrl: ogMatch[1],
+        source: "meta_tag",
+        message: "تم الاستخراج من meta tags"
       };
     }
     
-    return {
-      success: false,
-      error: "فشلت الطرق البديلة"
-    };
-    
   } catch (error) {
-    console.error('❌ فشلت الطريقة البديلة:', error.message);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.log("❌ فشل محاكاة المتصفح:", error.message);
   }
+  
+  return {
+    success: false,
+    error: "لم أتمكن من استخراج الفيديو",
+    message: "الرجاء التأكد من أن الفيديو عام وليس خاص"
+  };
 }
 
-// إرسال الفيديو مباشرة
-async function sendVideoDirectly(chatId, videoUrl, caption = '🎬 تم التحميل بنجاح!') {
+// إرسال الفيديو عبر Telegram
+async function sendVideoToTelegram(chatId, videoUrl, caption = "🎬 تم التحميل بنجاح!") {
   try {
-    console.log(`📤 إرسال الفيديو: ${videoUrl.substring(0, 50)}...`);
+    console.log(`📤 إرسال الفيديو إلى ${chatId}...`);
     
-    // إرسال الفيديو مع إمكانية البث (streaming)
+    // إرسال الفيديو مباشرة
     await bot.sendVideo(chatId, videoUrl, {
       caption: caption,
       supports_streaming: true,
       parse_mode: 'Markdown'
     });
     
-    return true;
+    return { success: true };
+    
   } catch (error) {
-    console.error('❌ خطأ في إرسال الفيديو:', error.message);
-    return false;
+    console.error("❌ خطأ في إرسال الفيديو:", error.message);
+    
+    // إذا كان الخطأ بسبب حجم الفيديو
+    if (error.message.includes('file is too big')) {
+      return {
+        success: false,
+        error: "حجم الفيديو كبير جداً",
+        message: "الفيديو يتجاوز الحد المسموح به في Telegram (50MB)"
+      };
+    }
+    
+    // إذا كان الخطأ بسبب نوع الملف
+    if (error.message.includes('wrong file format')) {
+      return {
+        success: false,
+        error: "تنسيق غير مدعوم",
+        message: "تنسيق الفيديو غير مدعوم من قبل Telegram"
+      };
+    }
+    
+    return {
+      success: false,
+      error: error.message,
+      message: "فشل في إرسال الفيديو"
+    };
   }
 }
 
-// Webhook Handler الرئيسي
+// Webhook Handler
 export default async function handler(req, res) {
   // الرد على GET requests
   if (req.method === 'GET') {
     return res.status(200).json({
-      status: '✅ البوت يعمل بنجاح',
-      webhook: true,
-      setup: `https://api.telegram.org/bot${process.env.BOT_TOKEN}/setWebhook?url=${encodeURIComponent(`https://${process.env.VERCEL_URL}/api/bot`)}`
+      status: '🚀 البوت يعمل بنجاح',
+      instructions: 'أرسل رابط فيديو Facebook إلى البوت'
     });
   }
   
   try {
     const update = req.body;
     
-    // إذا لم تكن هناك رسالة، نخرج
     if (!update.message || !update.message.text) {
       return res.status(200).json({ ok: true });
     }
@@ -171,98 +277,113 @@ export default async function handler(req, res) {
     const chatId = update.message.chat.id;
     const text = update.message.text.trim();
     
-    console.log(`📨 رسالة جديدة من ${chatId}: ${text}`);
+    console.log(`📨 رسالة من ${chatId}: ${text.substring(0, 50)}...`);
     
-    // معالجة أمر /start
+    // أمر /start
     if (text === '/start') {
       const welcomeMessage = `
-🎬 *بوت تحميل فيديوهات الفيسبوك*
+🤖 *بوت تحميل فيديوهات Facebook* 🎬
 
-*أهلاً وسهلاً بك!* 👋
+*مرحباً بك!* 👋
 
-✨ *مميزات البوت:*
+✨ *المميزات:*
 ✅ تحميل مباشر في المحادثة
 ✅ جودة عالية HD
-✅ سرعة في التحميل
-✅ دعم جميع أنواع الفيديوهات
+✅ سريع وسهل الاستخدام
+✅ لا حاجة لروابط خارجية
 
-📋 *كيفية الاستخدام؟*
-1. أرسل رابط فيديو الفيسبوك
-2. أنتظر قليلاً (5-10 ثواني)
+📋 *طريقة الاستخدام:*
+1. أرسل رابط الفيديو
+2. انتظر قليلاً (5-20 ثانية)
 3. احصل على الفيديو مباشرة!
 
 🌐 *أمثلة للروابط:*
-• https://fb.watch/abc123/
-• https://facebook.com/watch/?v=123456
-• https://facebook.com/reel/123456
-• https://m.facebook.com/.../videos/...
+• https://fb.watch/...
+• https://facebook.com/watch/?v=...
+• https://facebook.com/reel/...
+• https://facebook.com/.../videos/...
 
-⚠️ *ملاحظات:*
-- الفيديو يجب أن يكون عاماً (ليس خاصاً)
-- قد لا تعمل بعض الروابط المحمية
-- الحد الأقصى 50MB للفيديو
+⚠️ *ملاحظة:* يجب أن يكون الفيديو عاماً
 
-🚀 *جرب الآن! أرسل رابط فيديو*
+🚀 *أرسل رابط الآن!*
       `;
       
       await bot.sendMessage(chatId, welcomeMessage, {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
-            { text: '📱 تحديثات البوت', url: 'https://t.me/hmoamin' }
+            { text: '📱 قناة المطور', url: 'https://t.me/hmoamin' },
+            { text: '⭐ دعم البوت', callback_data: 'support' }
           ]]
         }
       });
     }
     
-    // معالجة أمر /help
+    // أمر /help
     else if (text === '/help') {
       await bot.sendMessage(chatId, 
         `❓ *مساعدة*\n\n` +
-        `إذا واجهتك مشكلة:\n` +
-        `1. تأكد من أن الفيديو عام وليس خاصاً\n` +
+        `*مشكلة في التحميل؟*\n` +
+        `1. تأكد أن الفيديو عام\n` +
         `2. جرب رابط آخر\n` +
-        `3. تأكد من اتصالك بالإنترنت\n\n` +
-        `📞 للمساعدة: @hmoamin`,
+        `3. أعد المحاولة بعد قليل\n\n` +
+        `*للاتصال بالمطور:*\n@hmoamin`,
         { parse_mode: 'Markdown' }
       );
     }
     
-    // إذا كان رابط فيسبوك
+    // إذا كان رابط Facebook
     else if (text.includes('facebook.com') || text.includes('fb.watch')) {
       try {
         // إرسال رسالة الانتظار
         const waitMsg = await bot.sendMessage(chatId, 
-          '🔍 *جاري تحليل الرابط...*\n' +
-          '⏳ قد يستغرق 5-10 ثواني',
+          '🔍 *جاري معالجة طلبك...*\n' +
+          '⏳ قد يستغرق 10-20 ثانية',
           { parse_mode: 'Markdown' }
         );
         
         // استخراج الفيديو
-        const videoInfo = await extractFacebookVideo(text);
+        const videoResult = await extractVideoWithAPI(text);
         
-        if (videoInfo.success) {
-          // تحديث الرسالة
+        if (videoResult.success) {
+          // تحديث رسالة الانتظار
           await bot.editMessageText('✅ *تم العثور على الفيديو!*\n📤 جاري الإرسال...', {
             chat_id: chatId,
             message_id: waitMsg.message_id,
             parse_mode: 'Markdown'
           });
           
+          // إعداد التسمية التوضيحية
+          const caption = `🎬 *فيديو Facebook*\n` +
+                         `📊 *المصدر:* ${videoResult.source}\n` +
+                         `✅ ${videoResult.message}\n\n` +
+                         `🔗 *الرابط الأصلي:*\n${text.substring(0, 50)}...`;
+          
           // إرسال الفيديو
-          const caption = `🎬 *${videoInfo.title}*\n📊 الجودة: ${videoInfo.quality}\n✅ تم التحميل بنجاح`;
+          const sendResult = await sendVideoToTelegram(chatId, videoResult.videoUrl, caption);
           
-          const sent = await sendVideoDirectly(chatId, videoInfo.videoUrl, caption);
-          
-          if (sent) {
+          if (sendResult.success) {
             // حذف رسالة الانتظار
             await bot.deleteMessage(chatId, waitMsg.message_id);
+            
+            // إرسال رسالة نجاح
+            await bot.sendMessage(chatId, 
+              '✨ *تمت العملية بنجاح!*\n\n' +
+              '✅ الفيديو وصل إليك\n' +
+              '📁 يمكنك حفظه في جهازك\n' +
+              '🎬 استمتع بالمشاهدة!',
+              { parse_mode: 'Markdown' }
+            );
+            
           } else {
-            // إذا فشل الإرسال المباشر
+            // إذا فشل إرسال الفيديو
             await bot.editMessageText(
-              `❌ *لم أستطع إرسال الفيديو مباشرة*\n\n` +
-              `📥 *رابط التحميل:*\n${videoInfo.videoUrl}\n\n` +
-              `🔗 *طريقة التحميل:*\n1. اضغط على الرابط\n2. اضغط مع الاستمرار\n3. اختر "تنزيل"`,
+              `❌ *${sendResult.error}*\n\n` +
+              `📥 *رابط التحميل المباشر:*\n${videoResult.videoUrl}\n\n` +
+              `*طريقة التحميل:*\n` +
+              `1. اضغط على الرابط أعلاه\n` +
+              `2. اضغط مع الاستمرار\n` +
+              `3. اختر "حفظ الفيديو"`,
               {
                 chat_id: chatId,
                 message_id: waitMsg.message_id,
@@ -270,18 +391,19 @@ export default async function handler(req, res) {
               }
             );
           }
+          
         } else {
           // إذا فشل استخراج الفيديو
           await bot.editMessageText(
-            `❌ *لم أتمكن من تحميل الفيديو*\n\n` +
+            `❌ *${videoResult.error}*\n\n` +
             `🔍 *الأسباب المحتملة:*\n` +
-            `• الفيديو خاص أو محمي\n` +
-            `• الرابط غير صحيح\n` +
-            `• مشكلة مؤقتة في الخدمة\n\n` +
-            `💡 *الحلول المقترحة:*\n` +
-            `1. تأكد أن الفيديو عام\n` +
-            `2. جرب رابط آخر\n` +
-            `3. حاول مرة أخرى بعد قليل`,
+            `1. الفيديو خاص أو محمي\n` +
+            `2. الرابط غير صحيح\n` +
+            `3. مشكلة في الخدمة\n\n` +
+            `💡 *الحلول:*\n` +
+            `• تأكد أن الفيديو عام\n` +
+            `• جرب رابط فيديو آخر\n` +
+            `• أعد المحاولة بعد قليل`,
             {
               chat_id: chatId,
               message_id: waitMsg.message_id,
@@ -291,24 +413,25 @@ export default async function handler(req, res) {
         }
         
       } catch (error) {
-        console.error('❌ خطأ في معالجة الرابط:', error);
-        await bot.sendMessage(chatId, 
-          '❌ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.',
+        console.error("❌ خطأ في معالجة الطلب:", error);
+        await bot.sendMessage(chatId,
+          '❌ *حدث خطأ غير متوقع*\n\n' +
+          'الرجاء المحاولة مرة أخرى أو تجربة رابط آخر.',
           { parse_mode: 'Markdown' }
         );
       }
     }
     
-    // أي نص آخر (ليس رابط ولا أمر)
+    // إذا كان نصاً عادياً
     else if (text && !text.startsWith('/')) {
       await bot.sendMessage(chatId,
         `📎 *لم أتعرف على طلبك*\n\n` +
         `⚠️ *أنا أفهم فقط:*\n` +
+        `• روابط فيديو Facebook\n` +
         `• /start - بدء البوت\n` +
-        `• /help - المساعدة\n` +
-        `• روابط فيديو الفيسبوك\n\n` +
+        `• /help - المساعدة\n\n` +
         `🎬 *مثال على رابط:*\n` +
-        `https://fb.watch/abc123/`,
+        `https://www.facebook.com/watch/?v=123456`,
         { parse_mode: 'Markdown' }
       );
     }
@@ -316,7 +439,23 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
     
   } catch (error) {
-    console.error('❌ Webhook error:', error);
+    console.error("❌ Webhook error:", error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+// معالجة callback queries
+bot.on('callback_query', async (callbackQuery) => {
+  const chatId = callbackQuery.message.chat.id;
+  const data = callbackQuery.data;
+  
+  if (data === 'support') {
+    await bot.sendMessage(chatId,
+      '💬 *دعم البوت*\n\n' +
+      'للدعم الفني أو الاستفسارات:\n' +
+      '📱 @hmoamin\n\n' +
+      '🌟 إذا أعجبك البوت، شاركه مع أصدقائك!',
+      { parse_mode: 'Markdown' }
+    );
+  }
+});
