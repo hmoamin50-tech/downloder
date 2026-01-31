@@ -1,7 +1,7 @@
 {
-  "name": "facebook-video-bot",
+  "name": "simple-telegram-bot",
   "version": "1.0.0",
-  "description": "Telegram bot to download Facebook videos",
+  "description": "Simple echo Telegram bot for Vercel",
   "main": "api/bot.js",
   "scripts": {
     "dev": "node api/bot.js"
